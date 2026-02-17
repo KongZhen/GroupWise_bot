@@ -10,6 +10,11 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Update
 from aiohttp import web
 
+# Load environment variables from .env file if it exists
+if os.path.exists(".env"):
+    from dotenv import load_dotenv
+    load_dotenv()
+
 from app.config import config
 from app.handlers import start, summary, settings, paid, subscribe
 from app.handlers.message_listener import router as message_router
@@ -61,8 +66,16 @@ async def delete_webhook():
 # Webhook handler for Railway
 async def handle_webhook(request: web.Request) -> web.Response:
     """Handle incoming webhook requests."""
+    # Verify secret token if provided
+    if config.WEBHOOK_SECRET:
+        secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+        if secret_token != config.WEBHOOK_SECRET:
+            logger.warning("Invalid secret token received")
+            return web.Response(status=403)
+    
     try:
-        update = Update.model_validate(await request.json(), context={"bot": bot})
+        json_data = await request.json()
+        update = Update(**json_data)
         await dp.feed_update(bot=bot, update=update)
         return web.Response()
     except Exception as e:
