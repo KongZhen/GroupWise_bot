@@ -32,8 +32,7 @@ class Config:
             raise ValueError("TELEGRAM_BOT_TOKEN is required")
         if not self.MINIMAX_API_KEY:
             raise ValueError("MINIMAX_API_KEY is required")
-        if not self.MINIMAX_GROUP_ID:
-            raise ValueError("MINIMAX_GROUP_ID is required")
+        # MINIMAX_GROUP_ID is optional - used for MiniMax group API (not required for basic bot)
         
         if admin_id := os.getenv("ADMIN_USER_ID"):
             self.ADMIN_USER_ID = int(admin_id)
