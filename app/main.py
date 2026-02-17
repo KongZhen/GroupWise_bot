@@ -1,14 +1,14 @@
 """Bot main entry point."""
-import asyncio
 import logging
+import sys
 import os
 
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import Update
-from aiohttp import web
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 # Load environment variables from .env file if it exists
 if os.path.exists(".env"):
@@ -46,79 +46,70 @@ dp.include_router(subscribe.router)
 dp.include_router(message_router)
 
 
-async def set_webhook():
-    """Set webhook for Railway deployment."""
+# Webhook path
+WEBHOOK_PATH = "/webhook"
+
+
+async def on_startup(bot: Bot) -> None:
+    """Set webhook on startup."""
     if config.WEBHOOK_URL:
-        webhook_secret = config.WEBHOOK_SECRET
         await bot.set_webhook(
-            f"{config.WEBHOOK_URL}/webhook",
-            secret_token=webhook_secret
+            f"{config.WEBHOOK_URL}{WEBHOOK_PATH}",
+            secret_token=config.WEBHOOK_SECRET or None
         )
-        logger.info(f"Webhook set to {config.WEBHOOK_URL}/webhook")
+        logger.info(f"Webhook set to {config.WEBHOOK_URL}{WEBHOOK_PATH}")
+    else:
+        logger.warning("WEBHOOK_URL not set, skipping webhook setup")
 
 
-async def delete_webhook():
-    """Delete webhook (for polling mode)."""
-    await bot.delete_webhook()
-    logger.info("Webhook deleted")
-
-
-# Webhook handler for Railway
-async def handle_webhook(request: web.Request) -> web.Response:
-    """Handle incoming webhook requests."""
-    # Verify secret token if provided
-    if config.WEBHOOK_SECRET:
-        secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-        if secret_token != config.WEBHOOK_SECRET:
-            logger.warning("Invalid secret token received")
-            return web.Response(status=403)
-    
-    try:
-        logger.info(f"Received request from {request.remote}")
-        update = Update.model_validate_json(await request.text())
-        logger.info(f"Processing update: {update.update_id}")
-        await dp.feed_update(bot=bot, update=update)
-        return web.Response()
-    except Exception as e:
-        logger.error(f"Error processing update: {e}")
-        return web.Response(status=500)
-
-
-# Create aiohttp application
-app = web.Application()
-
-# Startup
-async def on_startup(app):
-    logger.info("Starting bot...")
-    await set_webhook()
-
-# Shutdown  
-async def on_shutdown(app):
-    logger.info("Shutting down bot...")
-    await bot.session.close()
-
-app.on_startup.append(on_startup)
-app.on_shutdown.append(on_shutdown)
-
-app.router.add_post("/webhook", handle_webhook)
+# Register startup/shutdown hooks via dispatcher (aiogram 3.x best practice)
+dp.startup.register(on_startup)
 
 
 async def main_polling():
     """Run bot in polling mode (for local development)."""
-    await delete_webhook()
+    await bot.delete_webhook()
+    logger.info("Webhook deleted")
     
     logger.info("Starting bot in polling mode...")
     
     await dp.start_polling(bot)
 
 
+def main() -> None:
+    """Main entry point for Railway webhook mode."""
+    # Create aiohttp application
+    app = web.Application()
+    
+    # Create webhook request handler
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+        secret_token=config.WEBHOOK_SECRET or None,
+    )
+    
+    # Register webhook handler
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    
+    # Mount dispatcher startup and shutdown hooks to aiohttp application
+    setup_application(app, dp, bot=bot)
+    
+    # Start webserver
+    web.run_app(
+        app,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 8080))
+    )
+
+
 if __name__ == "__main__":
-    import sys
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
     
     if len(sys.argv) > 1 and sys.argv[1] == "polling":
         # Local development mode
+        import asyncio
         asyncio.run(main_polling())
     else:
         # Railway webhook mode
         logger.info("Starting Railway webhook server...")
-        web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+        main()
