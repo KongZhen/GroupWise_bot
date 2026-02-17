@@ -81,6 +81,12 @@ def main() -> None:
     # Create aiohttp application
     app = web.Application()
     
+    # Add health check endpoint
+    async def health_check(request):
+        return web.Response(text="OK")
+    
+    app.router.add_get("/health", health_check)
+    
     # Create webhook request handler
     webhook_requests_handler = SimpleRequestHandler(
         dispatcher=dp,
