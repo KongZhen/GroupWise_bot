@@ -74,8 +74,9 @@ async def handle_webhook(request: web.Request) -> web.Response:
             return web.Response(status=403)
     
     try:
-        json_data = await request.json()
-        update = Update(**json_data)
+        logger.info(f"Received request from {request.remote}")
+        update = Update.model_validate_json(await request.text())
+        logger.info(f"Processing update: {update.update_id}")
         await dp.feed_update(bot=bot, update=update)
         return web.Response()
     except Exception as e:
