@@ -2,18 +2,12 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile",
-    "packageManager": "none"
+    "dockerfilePath": "Dockerfile"
   },
   "deploy": {
     "numReplicas": 1,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10,
-    "port": 8080,
-    "env": {
-      "WEBHOOK_URL": {
-        "description": "Your Railway URL for webhook"
-      }
-    }
+    "port": 8080
   }
 }
