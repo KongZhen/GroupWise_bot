@@ -1,7 +1,7 @@
 """Bot main entry point."""
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -58,20 +58,6 @@ async def delete_webhook():
     logger.info("Webhook deleted")
 
 
-@asynccontextmanager
-async def lifespan(app: web.Application):
-    """Application lifespan handler."""
-    # Startup
-    logger.info("Starting bot...")
-    await set_webhook()
-    
-    yield
-    
-    # Shutdown
-    logger.info("Shutting down bot...")
-    await bot.session.close()
-
-
 # Webhook handler for Railway
 async def handle_webhook(request: web.Request) -> web.Response:
     """Handle incoming webhook requests."""
@@ -85,7 +71,21 @@ async def handle_webhook(request: web.Request) -> web.Response:
 
 
 # Create aiohttp application
-app = web.Application(lifespan=lifespan)
+app = web.Application()
+
+# Startup
+async def on_startup(app):
+    logger.info("Starting bot...")
+    await set_webhook()
+
+# Shutdown  
+async def on_shutdown(app):
+    logger.info("Shutting down bot...")
+    await bot.session.close()
+
+app.on_startup.append(on_startup)
+app.on_shutdown.append(on_shutdown)
+
 app.router.add_post("/webhook", handle_webhook)
 
 
@@ -98,32 +98,13 @@ async def main_polling():
     await dp.start_polling(bot)
 
 
-async def main_webhook():
-    """Run bot in webhook mode (for Railway)."""
-    logger.info("Starting bot in webhook mode...")
-    
-    # Get port from environment variable (Railway sets this)
-    port = int(os.getenv("PORT", "8080"))
-    
-    # Create runner
-    runner = web.AppRunner(app)
-    await runner.setup()
-    
-    # Start HTTP server
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    
-    logger.info(f"HTTP server started on port {port}")
-    
-    # Keep the server running
-    await asyncio.Event().wait()
-
-
 if __name__ == "__main__":
-    import os
+    import sys
     
-    # Check if running in webhook mode
-    if os.getenv("WEBHOOK_URL"):
-        asyncio.run(main_webhook())
-    else:
+    if len(sys.argv) > 1 and sys.argv[1] == "polling":
+        # Local development mode
         asyncio.run(main_polling())
+    else:
+        # Railway webhook mode
+        logger.info("Starting Railway webhook server...")
+        web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
